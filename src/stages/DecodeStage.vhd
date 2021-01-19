@@ -53,13 +53,13 @@ architecture RTL of DecodeStage is
     alias RT: std_logic_vector(4 downto 0) is InputInterface.Instruction(20 downto 16);
     alias RD: std_logic_vector(4 downto 0) is InputInterface.Instruction(15 downto 11);
     alias SHAMT: std_logic_vector(4 downto 0) is InputInterface.Instruction(10 downto 6);
-    alias FUNCT: std_logic_vector(4 downto 0) is InputInterface.Instruction(5 downto 0);
+    alias FUNCT: std_logic_vector(5 downto 0) is InputInterface.Instruction(5 downto 0);
 
     -- Defines fields from fetched instruction for I type instructions
     alias IMM: std_logic_vector(15 downto 0) is InputInterface.Instruction(15 downto 0);
 
     -- Defines fields from fetched instruction for J type instructions
-    alias BASE: std_logic_vector(26 downto 0) is InputInterface.Instruction(26 downto 0);
+    alias BASE: std_logic_vector(25 downto 0) is InputInterface.Instruction(25 downto 0);
 
     -- Asynchronous result of comparisons to OPCODE field
     signal RTypeFlagAsync: std_logic;
@@ -68,11 +68,12 @@ architecture RTL of DecodeStage is
 
     --ALU
     signal SetFlagAsync: std_logic;
-    signal SetImediateAsync: std_logic;
+    signal SetImmediateAsync: std_logic;
     signal SetUnsignedAsync: std_logic;
     signal LUIFlagAsync: std_logic;
 
-    signal ALUOP: std_logic_vector(2 downto 0);
+    signal ALUOPAsync: std_logic_vector(2 downto 0);
+    signal ArithmeticExtendFlagAsync: std_logic;
     signal ArithmeticImmediateFlagAsync: std_logic;
     signal ArithmeticUnsignedFlagAsync: std_logic;
 
@@ -84,9 +85,10 @@ architecture RTL of DecodeStage is
 
     -- Asynchronous flags for branch instructions
     signal BranchInstructionFlagAsync: std_logic;
-    signal BranchInstructionModesAsync: std_logic_vector(2 downto 0);
+    --signal BranchInstructionModesAsync: std_logic_vector(2 downto 0);
     signal BranchInstructionLinkAsync: std_logic;  -- SHARED WITH "JumpUnconditionalLinkAsync"
     signal BranchInstructionAroundZeroAsync: std_logic;
+    signal ComparatorMasksAsync: std_logic_vector(2 downto 0);
 
     -- Asynchronous flags for jump instructions
     signal JumpUnconditionalFlagAsync: std_logic;
@@ -100,8 +102,8 @@ architecture RTL of DecodeStage is
     signal MemoryAccessUnsignedAsync: std_logic;
 
     -- Asynchronous flags for writeback control
-    signal WritebackRegAsync: std_logic;
-    signal WritebackEnable: std_logic;
+    signal WritebackRegAsync: std_logic_vector(4 downto 0);
+    signal WritebackEnableAsync: std_logic;
 
     -- Asynchronous read from read bank temporaries
     signal RegData1Async: std_logic_vector(31 downto 0);
@@ -124,15 +126,17 @@ begin
 						 RegisterBank(to_integer(unsigned(RT))) when RT /= InputInterface.WritebackReg else 
 						 InputInterface.WritebackData;
 
-	end generate ForwardRead;
+	end generate RegBankForwardRead;
 
 	-- Reads from Register Bank and dont forward writeback data
 	RegBankNoForwardRead: if not EnableForwarding generate
 
-		RegData1Async <= (others => '0') when RS = "00000" else RegisterBank(to_integer(unsigned(RS)));
-		RegData2Async <= (others => '0') when RT = "00000" else RegisterBank(to_integer(unsigned(RT)));
+		RegData1Async <= (others => '0') when RS = "00000" or RS = "UUUUU" else RegisterBank(to_integer(unsigned(RS)));
+		--RegData1Async <= RegisterBank(to_integer(unsigned(RS))) when RS /= "00000" else (others => '0');
+		RegData2Async <= (others => '0') when RT = "00000" or RT = "UUUUU" else RegisterBank(to_integer(unsigned(RT)));
+		--RegData2Async <= RegisterBank(to_integer(unsigned(RT))) when RT /= "00000" else (others => '0');
 
-	end generate NoForwardRead;
+	end generate RegBankNoForwardRead;
 
 
 	-- Writes to Register Bank
@@ -166,20 +170,13 @@ begin
 	ITypeFlagAsync <= RTypeFlagAsync nand JumpUnconditionalFlagAsync;  -- "JumpUnconditionalFlagAsync" is defined below, and is true when (J, JAL, JALR, JR) instructions are fetched
 
 
-	-- Flags set instructions (SLT, SLTU, SLTI, SLTIU)
-	SetFlagAsync <= '1' when (OPCODE = "000000" and (FUNCT = "101010" or FUNCT = "101011")) or OPCODE = "001010" or OPCODE = "001011" else '0';
-
-	-- (SLTI, SLTIU)
-	SetImediateAsync <= '1' when OPCODE = "001010" or OPCODE = "001011" else '0';
-
-	-- (SLTU, SLTIU)
-	SetUnsignedAsync <= '1' when (OPCODE = "000000" and FUNCT = "101011") or OPCODE = "001011" else '0';
-
-	-- 
+	-- Flags a LUI instruction. Needs a specific flag because shifting behaviour is unique
 	LUIFlagAsync <= '1' when OPCODE = "001111" else '0';
 
-	-- Flags (ADDIU, ADDU, SUBU)  TODO: Add MULTU when implementing multiplicatiton/division instructions
-	--ArithmeticUnsignedFlagAsync <= '1' when OPCODE = "001001" or (OPCODE = "000000" and (FUNCT = "100001" or FUNCT = "100011") else '0';
+	-- Flags (ADDIU, ADDU, SUBU, ANDI, ORI, XORI)  TODO: Add MULTU when implementing multiplicatiton/division instructions
+	--ArithmeticUnsignedFlagAsync <= '1' when OPCODE = "001001" or (OPCODE = "000000" and (FUNCT = "100001" or FUNCT = "100011")) or OPCODE = "001100" or OPCODE = "001101" or OPCODE = "001110" else '0';
+	-- Flags (ANDI, ORI, XORI)  TODO: Add MULTU when implementing multiplicatiton/division instructions
+	ArithmeticUnsignedFlagAsync <= '1' when  OPCODE = "001100" or OPCODE = "001101" or OPCODE = "001110" else '0';
 
 	-- (ADDI, ADDIU, ANDI, ORI, XORI)
 	ArithmeticImmediateFlagAsync <= '1' when OPCODE = "001000" or OPCODE = "001001" or OPCODE = "001100" or OPCODE = "001101" or OPCODE = "001110" else '0';
@@ -193,11 +190,11 @@ begin
 				  "011" when (OPCODE = "000000" and FUNCT = "100101") or OPCODE = "001101" else  -- BITWISE OR (OR, ORI)
 			 	  "100" when (OPCODE = "000000" and FUNCT = "100111") else                       -- BITWISE NOR (NOR)
 				  "101" when (OPCODE = "000000" and FUNCT = "100110") or OPCODE = "001110" else  -- BITWISE XOR (XOR, XORI)
-				  "000"                                                                          -- ADDITION (ADD, ADDI, ADDIU, LW, SW, ...) (Adds and anything else)
+				  "000";                                                                         -- ADDITION (ADD, ADDI, ADDIU, LW, SW, ...) (Adds and anything else)
 
 
 	-- (SLL, SLLV, SRA, SRAV, SRL, SRLV)
-	ShifterFlagAsync <= '1' when (OPCODE = "000000" and (SHAMT /= "000000")) or OPCODE = "000100" or OPCODE = "000011" or OPCODE = "000111" or OPCODE = "000010" or OPCODE = "000110" else '0';
+	ShifterFlagAsync <= '1' when (OPCODE = "000000" and (SHAMT /= "00000")) or OPCODE = "000100" or OPCODE = "000011" or OPCODE = "000111" or OPCODE = "000010" or OPCODE = "000110" else '0';
 
 	-- (SLLV, SRAV, SRLV)
 	ShifterVariableAsync <= '1' when OPCODE = "000100" or OPCODE = "000111" or OPCODE = "000110" else '0';
@@ -206,26 +203,44 @@ begin
 	ShifterArithmeticAsync <= '1' when OPCODE = "000011" or OPCODE = "000111" else '0';
 
 	-- (SLL, SLLV)
-	ShifterLeftAsync <= '1' when (OPCODE = "000000" and (SHAMT /= "000000")) or OPCODE = "000100" else '0';
+	ShifterLeftAsync <= '1' when (OPCODE = "000000" and (SHAMT /= "00000")) or OPCODE = "000100" else '0';
 
 
 	-- Flags branch instructions (BEQ, BGEZ, BGEZAL, BGTZ, BLTZ, BLTZAL, BNE) (OPCODEs are taken from opencores.org/projects/plasma/opcodes)
 	BranchInstructionFlagAsync <= '1' when OPCODE = "000100" or OPCODE = "000001" or OPCODE = "000111" or OPCODE = "000110" or OPCODE = "000101" else '0';
-
-	-- Take branch if Greater Then. (BGEZ, BGEZAL, BGTZ, BNE) instructions
-	BranchInstructionModesAsync(2) <= '1' when (OPCODE = "000001" and RT = "00001") or (OPCODE = "000001" and RT = "10001") or (OPCODE = "000111" and RT = "00000") or OPCODE = "000101" else '0';
-
-	-- Take branch if Equal. (BEQ, BGEZ, BGEZAL)
-	BranchInstructionModesAsync(1) <= '1' when OPCODE = "000100" or (OPCODE = "000001" and RT = "00001") or (OPCODE = "000001" and RT = "10001") else '0';
-
-	-- Take branch if Lesser Then. (BLTZ, BLTZAL, BNE)
-	BranchInstructionModesAsync(0) <= '1' when (OPCODE = "000001" and RT = "00000") or (OPCODE = "000001" and RT = "10000") or OPCODE = "000101" else '0';
-
+	
 	-- Save PC on return register for branch-and-link type instructions (BGEZAL, BLTZAL, JAL, JRAL)
 	BranchInstructionLinkAsync <= '1' when (OPCODE = "000001" and RT = "10001") or (OPCODE = "000001" and RT = "10000") or OPCODE = "000011" or (OPCODE = "000000" and RT = "00000" and SHAMT = "00000" and FUNCT = "001001") else '0'; 
 
 	-- Always '1' except on BEQ
 	BranchInstructionAroundZeroAsync <= '0' when OPCODE = "000100" or BranchInstructionFlagAsync = '0' else '1';
+
+	-- Take branch if Greater Then. (BGEZ, BGEZAL, BGTZ, BNE) instructions
+	--BranchInstructionModesAsync(2) <= '1' when (OPCODE = "000001" and RT = "00001") or (OPCODE = "000001" and RT = "10001") or (OPCODE = "000111" and RT = "00000") or OPCODE = "000101" else '0';
+
+	-- Take branch if Equal. (BEQ, BGEZ, BGEZAL)
+	--BranchInstructionModesAsync(1) <= '1' when OPCODE = "000100" or (OPCODE = "000001" and RT = "00001") or (OPCODE = "000001" and RT = "10001") else '0';
+
+	-- Take branch if Lesser Then. (BLTZ, BLTZAL, BNE)
+	--BranchInstructionModesAsync(0) <= '1' when (OPCODE = "000001" and RT = "00000") or (OPCODE = "000001" and RT = "10000") or OPCODE = "000101" else '0';
+
+    -- Branch if Greater Then (BGEZ, BGEZAL, BGTZ, BNE) instructions
+    ComparatorMasksAsync(2) <= '1' when (OPCODE = "000001" and RT = "00001") or (OPCODE = "000001" and RT = "10001") or (OPCODE = "000111" and RT = "00000") or OPCODE = "000101" else '0';
+
+	-- Branch if Equal (BEQ, BGEZ, BGEZAL) instructions
+	ComparatorMasksAsync(1) <= '1' when OPCODE = "000100" or (OPCODE = "000001" and RT = "00001") or (OPCODE = "000001" and RT = "10001") else '0';
+
+    -- Branch if Lesser Then (BLTZ, BLTZAL, BNE) or Set Less Than instructions (SLTI, SLT)
+	ComparatorMasksAsync(0) <= '1' when (OPCODE = "000001" and RT = "00000") or (OPCODE = "000001" and RT = "10000") or OPCODE = "000101" or SetFlagAsync = '1' else '0';
+
+	-- Flags set instructions (SLT, SLTU, SLTI, SLTIU)
+	SetFlagAsync <= '1' when (OPCODE = "000000" and (FUNCT = "101010" or FUNCT = "101011")) or OPCODE = "001010" or OPCODE = "001011" else '0';
+
+	-- (SLTI, SLTIU)
+	SetImmediateAsync <= '1' when OPCODE = "001010" or OPCODE = "001011" else '0';
+
+	-- (SLTU, SLTIU)
+	SetUnsignedAsync <= '1' when (OPCODE = "000000" and FUNCT = "101011") or OPCODE = "001011" else '0';
 
 
 	-- J, JAL, JALR, JR instructions
@@ -235,11 +250,11 @@ begin
 	JumpFromImmediateAsync <= '1' when OPCODE = "000010" or OPCODE = "000011" else '0';
 
 
-	-- (LB, LBU, LH, LHU, SB, SH, SW) 
+	-- (LB, LBU, LH, LHU, LW, SB, SH, SW) 
 	MemoryAccessFlagAsync <= '1' when OPCODE = "100000" or OPCODE = "100100" or OPCODE = "100001" or OPCODE = "100101" or OPCODE = "100011" or OPCODE = "101000" or OPCODE = "101001" or OPCODE = "101011" else '0';
 
-	-- (LB, LBU, LH, LHU)
-	MemoryAccessLoadAsync <= '1' when OPCODE = "100000" or OPCODE = "100100" or OPCODE = "100001" or OPCODE = "100101" else '0';
+	-- (LB, LBU, LH, LHU, LW)
+	MemoryAccessLoadAsync <= '1' when OPCODE = "100000" or OPCODE = "100100" or OPCODE = "100001" or OPCODE = "100101" or OPCODE = "100011" else '0';
 
 	-- "00" for word (LW, SW), "01" for half-word (LH, LHU, SH), "10" for byte (LB, LBU, SB)
 	MemoryAccessGranularityAsync <= "00" when OPCODE = "100011" or OPCODE = "101011" else
@@ -251,19 +266,19 @@ begin
 
 
 	-- 
-	WritebackEnableAsync <= '1' when (RTypeFlagAsync = '1' and InputInterface.Instruction /= (others => '0')) or ArithmeticImmediateFlagAsync = '1' or MemoryAccessFlagAsync = '1' or BranchInstructionLinkAsync = '1' or LUIFlagAsync = '1' else '0';
+	WritebackEnableAsync <= '1' when (RTypeFlagAsync = '1' and InputInterface.Instruction /= x"00000000" and FUNCT /= "01000") or ArithmeticImmediateFlagAsync = '1' or (MemoryAccessFlagAsync = '1' and MemoryAccessLoadAsync = '1') or BranchInstructionLinkAsync = '1' or LUIFlagAsync = '1' else '0';
 
 	-- 
-	WritebackRegAsync <= RD when RTypeFlag = '1' else
-						 RT when ArithmeticImmediateFlagAsync = '1' or (MemoryAccessFlagAsync = '1' and MemoryAccessLoadAsync = '1') else
-						 "11111";  -- $RA for JAL or JRAL
+	WritebackRegAsync <= RD when RTypeFlagAsync = '1' or (OPCODE = "000000" and RT = "00000" and SHAMT = "00000" and FUNCT = "001001") else  -- R type or JRAL
+						 RT when ArithmeticImmediateFlagAsync = '1' or (MemoryAccessFlagAsync = '1' and MemoryAccessLoadAsync = '1') or LUIFlagAsync = '1' else  -- I type & LW/H/B
+						 "11111";  -- $RA for JAL
 
 
-	Data1Async <= InputInterface.IncrementedPC when JumpFromImmediateAsync = '1' else  -- J or JAL instructions
+	Data1Async <= --InputInterface.IncrementedPC when JumpFromImmediateAsync = '1' else  --or BranchInstructionFlagAsync = '1' else  -- J or JAL instructions
 				  RegData1Async;
 
-	Data2Async <=  resize(signed(BASE), 30) & "00" when JumpFromImmediateAsync = '1' else  -- J or JAL instructions
-			       RegData2Async;  -- when RTypeFlagAsync = '1' or ShifterFlagAsync = '1';  
+	Data2Async <= InputInterface.IncrementedPC(31 downto 28) & BASE & "00" when JumpFromImmediateAsync = '1' else  -- J or JAL instructions
+			      RegData2Async;  -- when RTypeFlagAsync = '1' or ShifterFlagAsync = '1';  
 				  --resize(signed(InputInterface.IMM), 32) when ArithmeticExtendFlagAsync = '1' else
 				  --resize(unsigned(InputInterface.IMM), 32);
 
@@ -277,16 +292,21 @@ begin
 			OutputInterface.Data1 <= (others => '0');
 			OutputInterface.Data2 <= (others => '0');
 			OutputInterface.IMM <= (others => '0');
+			OutputInterface.IncrementedPC <= (others => '0');
 
 			-- Execute stage control signals
 			OutputInterface.ALUOP <= "000";
+			OutputInterface.ArithmeticExtendFlag <= '0';
+            OutputInterface.ArithmeticImmediateFlag <= '0';
+            OutputInterface.ArithmeticUnsignedFlag <= '0';
 
 			OutputInterface.BranchInstructionFlag <= '0';
-			OutputInterface.BranchInstructionModes <= "000";
 			OutputInterface.BranchInstructionAroundZero <= '0';
+			OutputInterface.ComparatorMasks <= (others => '0');
+			OutputInterface.JumpFromImmediate <= '0';
 
 			OutputInterface.SetFlag <= '0';
-			OutputInterface.SetImediate <= '0';
+			OutputInterface.SetImmediate <= '0';
 			OutputInterface.SetUnsigned <= '0';
 
 			OutputInterface.ShifterFlag <= '0';
@@ -311,16 +331,21 @@ begin
 			OutputInterface.Data1 <= Data1Async;
 			OutputInterface.Data2 <= Data2Async;
 			OutputInterface.IMM <= IMM;
+			OutputInterface.IncrementedPC <= InputInterface.IncrementedPC;
 
 			-- Execute stage control signals
 			OutputInterface.ALUOP <= ALUOPAsync;
+			OutputInterface.ArithmeticExtendFlag <= ArithmeticExtendFlagAsync;
+            OutputInterface.ArithmeticImmediateFlag <= ArithmeticImmediateFlagAsync;
+            OutputInterface.ArithmeticUnsignedFlag <= ArithmeticUnsignedFlagAsync;
 
 			OutputInterface.BranchInstructionFlag <= BranchInstructionFlagAsync;
-			OutputInterface.BranchInstructionModes <= BranchInstructionModesAsync;
 			OutputInterface.BranchInstructionAroundZero <= BranchInstructionAroundZeroAsync;
+			OutputInterface.ComparatorMasks <= ComparatorMasksAsync;
+			OutputInterface.JumpFromImmediate <= JumpFromImmediateAsync;
 
 			OutputInterface.SetFlag <= SetFlagAsync;
-			OutputInterface.SetImediate <= SetImediateAsync;
+			OutputInterface.SetImmediate <= SetImmediateAsync;
 			OutputInterface.SetUnsigned <= SetUnsignedAsync;
 
 			OutputInterface.ShifterFlag <= ShifterFlagAsync;
@@ -336,9 +361,9 @@ begin
 			OutputInterface.MemoryAccessGranularity <= MemoryAccessGranularityAsync;
 
 			-- Writeback stage control signals
-			OutputInterface.WritebackReg <= WritebackRegAsync;
 			OutputInterface.WritebackEnable <= WritebackEnableAsync;
-
+			OutputInterface.WritebackReg <= WritebackRegAsync;
+			
 		end if;
 
 	end process PipelineRegisters;

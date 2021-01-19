@@ -26,7 +26,8 @@ library work;
 entity MIPS_TB is
 	
 	generic(
-		MemoryFileName: string := "UNUSED"
+		DataMemoryFileName: string := "UNUSED";
+		InstructionMemoryFileName: string := "UNUSED"
 	);
 	
 end entity MIPS_TB;
@@ -37,11 +38,11 @@ architecture TB of MIPS_TB is
 	signal Clock: std_logic := '0';
 	constant ClockPeriod: time := 10 ns; 
 
-	signal Reset: std_logic := '1', '0' after 105 ns;
+	signal Reset: std_logic := '1';
 
 	signal InstructionMemoryAddress, InstructionMemoryDataOut: std_logic_vector(31 downto 0);
 
-	signal DataMemoryAddress, DataMemoryDataIn: DataMemoryDataOut std_logic_vector(31 downto 0);
+	signal DataMemoryAddress, DataMemoryDataIn, DataMemoryDataOut: std_logic_vector(31 downto 0);
 	signal DataMemoryWrite: std_logic;
 
 	constant MARS_INSTRUCTION_OFFSET    : std_logic_vector(31 downto 0) := x"00400000";
@@ -56,6 +57,15 @@ begin
 		wait for ClockPeriod/2;
 
 	end process;
+	
+	ResetProc: process begin
+	
+	   Reset <= '1';
+	   wait for 105 ns;
+	   Reset <= '0';
+	   wait;
+	
+	end process ResetProc;
 	
 
 	-- Instantiates processor
@@ -82,9 +92,9 @@ begin
 
 		generic map(
 
-	        SIZE => 32,
+	        SIZE => 64,
 	        START_ADDRESS => MARS_INSTRUCTION_OFFSET,
-	        imageFileName => MemoryFileName
+	        imageFileName => InstructionMemoryFileName
 
 	    )
 
@@ -105,9 +115,9 @@ begin
 
 		generic map(
 
-	        SIZE => 32,
+	        SIZE => 64,
 	        START_ADDRESS => MARS_DATA_OFFSET,
-	        imageFileName => MemoryFileName
+	        imageFileName => DataMemoryFileName
 
 	    )
 
@@ -123,4 +133,4 @@ begin
 
 	    );
 	
-end architecture RTL;
+end architecture TB;

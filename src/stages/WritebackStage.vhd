@@ -30,7 +30,7 @@ entity WritebackStage is
 		Clock: in std_logic;  -- From top level entity
 		Reset: in std_logic;  -- From top level entity
 
-		InputInterface: out WritebackInput;  -- Defined in MIPS_PKG
+		InputInterface: in WritebackInput;  -- Defined in MIPS_PKG
 		OutputInterface: out WritebackOutput  -- Defined in MIPS_PKG
 
 	);
@@ -41,9 +41,9 @@ end entity WritebackStage;
 architecture RTL of WritebackStage is
 
 begin
-
-	OutputInterface.WritebackData <= InputInterface.WritebackData;
-	OutputInterface.WritebackReg <= InputInterface.WritebackReg;
-	OutputInterface.WritebackEnable <= InputInterface.WritebackEnable;
 	
+	OutputInterface.WritebackEnable <= InputInterface.WritebackEnable;
+	OutputInterface.WritebackReg <= InputInterface.WritebackReg;
+	OutputInterface.WritebackData <= InputInterface.WritebackData;
+
 end architecture RTL;

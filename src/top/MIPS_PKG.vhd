@@ -25,7 +25,7 @@ package MIPS_PKG is
 	type DecodeInput is record
 
 		-- PC + 4, used in computing the jump address in the Execute stage
-		IncrementedPCAddress: std_logic_vector(31 downto 0);
+		IncrementedPC: std_logic_vector(31 downto 0);
 
 		-- Next instruction, read from instruction memory in the Fetch stage
 		Instruction: std_logic_vector(31 downto 0);
@@ -45,17 +45,21 @@ package MIPS_PKG is
 		IMM: std_logic_vector(15 downto 0);
 
 		-- PC + 4, used in computing the jump address in a branch instruction
-		IncrementedPCAddress: std_logic_vector(31 downto 0);
+		IncrementedPC: std_logic_vector(31 downto 0);
 
 		-- Execute stage control signals
 		ALUOP: std_logic_vector(2 downto 0);
+		ArithmeticExtendFlag: std_logic;
+        ArithmeticImmediateFlag: std_logic;
+        ArithmeticUnsignedFlag: std_logic;
 
 		BranchInstructionFlag: std_logic;
-		BranchInstructionModes: std_logic_vector(2 downto 0);
 		BranchInstructionAroundZero: std_logic;
+		ComparatorMasks: std_logic_vector(2 downto 0);
+		JumpFromImmediate: std_logic;
 
 		SetFlag: std_logic;
-		SetImediate: std_logic;
+		SetImmediate: std_logic;
 		SetUnsigned: std_logic;
 
 		ShifterFlag: std_logic;
@@ -83,12 +87,19 @@ package MIPS_PKG is
 
 		-- Data to be written on memory at the specified address
 		RegBankPassThrough: std_logic_vector(31 downto 0);
+		
+		LuiFlag: std_logic;
+		
+	    DataMemDataOut: std_logic_vector(31 downto 0);
 
 		-- Memory Access stage control signals
 		MemoryAccessFlag: std_logic;
 		MemoryAccessLoad: std_logic;
 		MemoryAccessUnsigned: std_logic;
 		MemoryAccessGranularity: std_logic_vector(1 downto 0);
+		
+		WritebackEnable: std_logic;
+		WritebackReg: std_logic_vector(4 downto 0);
 
 	end record;
 
@@ -106,7 +117,7 @@ package MIPS_PKG is
 	type FetchOutput is record
 
 		-- PC + 4, used in computing the jump address in the Execute stage
-		IncrementedPCAddress: std_logic_vector(31 downto 0);
+		IncrementedPC: std_logic_vector(31 downto 0);
 
 		-- Address to instruction memory (PC)
 		InstructionMemoryAddress: std_logic_vector(31 downto 0);
@@ -119,7 +130,7 @@ package MIPS_PKG is
 	type DecodeOutput is record
 
 		-- Passes-through PC + 4, used in computing the jump address in the Execute stage
-		IncrementedPCAddress: std_logic_vector(31 downto 0);
+		IncrementedPC: std_logic_vector(31 downto 0);
 
 		-- Data values read from register bank
 		Data1: std_logic_vector(31 downto 0);
@@ -128,19 +139,25 @@ package MIPS_PKG is
 
 		-- Execute control signals
 		ALUOP: std_logic_vector(2 downto 0);
+		ArithmeticExtendFlag: std_logic;
+        ArithmeticImmediateFlag: std_logic;
+        ArithmeticUnsignedFlag: std_logic;
 
 		BranchInstructionFlag: std_logic;
-		BranchInstructionModes: std_logic_vector(2 downto 0);
 		BranchInstructionAroundZero: std_logic;
+		ComparatorMasks: std_logic_vector(2 downto 0);
+		JumpFromImmediate: std_logic;
+		
+		LUIFlag: std_logic;
 
 		SetFlag: std_logic;
-		SetImediateAsync: std_logic;
+		SetImmediate: std_logic;
 		SetUnsigned: std_logic;
 
 		ShifterFlag: std_logic;
 		ShifterArithmetic: std_logic;
 		ShifterLeft: std_logic;
-		ShifterVariableAsync: std_logic;
+		ShifterVariable: std_logic;
 
 		-- Memory Access stage control signals
 		MemoryAccessFlag: std_logic;
@@ -149,7 +166,6 @@ package MIPS_PKG is
 		MemoryAccessGranularity: std_logic_vector(1 downto 0);
 
 		-- Writeback stage control signals
-		LUIFlag: std_logic;
 		WritebackReg: std_logic_vector(4 downto 0);
 		WritebackEnable: std_logic;
 
@@ -160,9 +176,13 @@ package MIPS_PKG is
 		-- Memory Access stage data
 		ALUResult: std_logic_vector(31 downto 0);
 		RegBankPassthrough: std_logic_vector(31 downto 0);
+		
+		-- Computed branch information
+		BranchTakeFlag: std_logic;
+		BranchAddress: std_logic_vector(31 downto 0);
 
 		-- Memory Access stage control signals
-		LUIFlag: std_logic;
+		--LUIFlag: std_logic;
 		MemoryAccessFlag: std_logic;
 		MemoryAccessLoad: std_logic;
 		MemoryAccessUnsigned: std_logic;
@@ -175,6 +195,10 @@ package MIPS_PKG is
 	end record;
 
 	type MemoryAccessOutput is record
+	
+	    DataMemWrite: std_logic;
+	    DataMemAddress: std_logic_vector(31 downto 0);
+	    DataMemDataIn: std_logic_vector(31 downto 0);
 
 		-- Data read from memory from the specified address
 		WritebackEnable: std_logic;

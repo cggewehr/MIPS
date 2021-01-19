@@ -25,7 +25,7 @@ library ieee;
 	use ieee.numeric_std.all;
 
 library work;
-	use MIPS_PKG.all;
+	use work.MIPS_PKG.all;
 
 
 entity MIPS is
@@ -78,7 +78,7 @@ begin
 
 	-- Data from Execute stage
 	FetchInput.BranchAddress <= ExecuteOutput.BranchAddress;
-	FetchInput.BranchFlag <= ExecuteOutput.BranchTakeFlag;
+	FetchInput.BranchTakeFlag <= ExecuteOutput.BranchTakeFlag;
 
 	-- Instantiate Fetch stage
 	FetchStage: entity work.FetchStage
@@ -120,16 +120,21 @@ begin
 	ExecuteInput.Data1 <= DecodeOutput.Data1;
 	ExecuteInput.Data2 <= DecodeOutput.Data2;
 	ExecuteInput.IMM <= DecodeOutput.IMM;
+	ExecuteInput.IncrementedPC <= DecodeOutput.IncrementedPC;
 
 	-- Control from Decode stage
 	ExecuteInput.ALUOP <= DecodeOutput.ALUOP;
+	ExecuteInput.ArithmeticExtendFlag <= DecodeOutput.ArithmeticExtendFlag;
+	ExecuteInput.ArithmeticImmediateFlag <= DecodeOutput.ArithmeticImmediateFlag;
+	ExecuteInput.ArithmeticUnsignedFlag <= DecodeOutput.ArithmeticUnsignedFlag;
 
 	ExecuteInput.BranchInstructionFlag <= DecodeOutput.BranchInstructionFlag;
-	ExecuteInput.BranchInstructionModes <= DecodeOutput.BranchInstructionModes;
-	ExecuteInput.BranchInstructionAroundZero <= DecodeOutput.BranchInstructionAroundZer;
+	ExecuteInput.ComparatorMasks <= DecodeOutput.ComparatorMasks;
+	ExecuteInput.BranchInstructionAroundZero <= DecodeOutput.BranchInstructionAroundZero;
+	ExecuteInput.JumpFromImmediate <= DecodeOutput.JumpFromImmediate;
 
 	ExecuteInput.SetFlag <= DecodeOutput.SetFlag;
-	ExecuteInput.SetImediate <= DecodeOutput.SetImediate;
+	ExecuteInput.SetImmediate <= DecodeOutput.SetImmediate;
 	ExecuteInput.SetUnsigned <= DecodeOutput.SetUnsigned;
 
 	ExecuteInput.ShifterFlag <= DecodeOutput.ShifterFlag;
@@ -166,13 +171,23 @@ begin
 	DataMemoryDataIn <= MemoryAccessOutput.DataMemDataIn;
 	MemoryAccessInput.DataMemDataOut <= DataMemoryDataOut;
 	DataMemoryWrite <= MemoryAccessOutput.DataMemWrite;
+	
+	-- Data from Execute stage
+	MemoryAccessInput.ALUData <= ExecuteOutput.ALUResult;
+	MemoryAccessInput.RegBankPassthrough <= ExecuteOutput.RegBankPassthrough;
 
 	-- Control signals from Execute stage
+	MemoryAccessInput.MemoryAccessFlag <= ExecuteOutput.MemoryAccessFlag;
+	MemoryAccessInput.MemoryAccessLoad <= ExecuteOutput.MemoryAccessLoad;
+	MemoryAccessInput.MemoryAccessUnsigned <= ExecuteOutput.MemoryAccessUnsigned;
+	MemoryAccessInput.MemoryAccessGranularity <= ExecuteOutput.MemoryAccessGranularity;
+	--MemoryAccessInput.LUIFlag <= ExecuteOutput.LUIFlag;
+	
 	MemoryAccessInput.WritebackEnable <= ExecuteOutput.WritebackEnable;
 	MemoryAccessInput.WritebackReg <= ExecuteOutput.WritebackReg;
 
 	-- Instantiate Memory Access stage
-	MemoryAccessStage: entity MemoryAccessStage
+	MemoryAccessStage: entity work.MemoryAccessStage
 
 		port map(
 			
@@ -191,7 +206,7 @@ begin
 	WritebackInput.WritebackReg <= MemoryAccessOutput.WritebackReg;
 
 	-- Instantiate Writeback stage
-	WritebackStage: entity WritebackStage 
+	WritebackStage: entity work.WritebackStage 
 
 		port map(
 			

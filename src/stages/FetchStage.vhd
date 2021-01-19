@@ -53,7 +53,7 @@ begin
 	OutputInterface.InstructionMemoryAddress <= ProgramCounter;
 
 	-- Increments PC by 4
-	PCAdder: IncrementedPCAsync <= unsigned(ProgramCounter) + to_unsigned(4, 32);
+	PCAdder: IncrementedPCAsync <= std_logic_vector(unsigned(ProgramCounter) + to_unsigned(4, 32));
 
 	-- Writes to PC register either the target jump address, if a branch is to be taken, or increments PC, if no branch is to be taken
 	PCRegister: process(Clock, Reset) begin
@@ -67,13 +67,13 @@ begin
 				ProgramCounter <= InputInterface.BranchAddress;
 
 			else
-				ProgramCounter <= IncrementedPC;
+				ProgramCounter <= IncrementedPCAsync;
 
 			end if;
 
 		end if;
 
-	end process FetchStageProc;
+	end process PCRegister;
 
 
 	-- Pipeline Registers
@@ -82,7 +82,7 @@ begin
 		if Reset = '1' then
 
 			OutputInterface.Instruction <= (others => '0');
-			OutputInterface.IncrementedPCAddress <= (others => '0');
+			OutputInterface.IncrementedPC <= (others => '0');
 
 		elsif rising_edge(Clock) then
 			

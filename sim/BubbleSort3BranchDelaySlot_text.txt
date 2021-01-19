@@ -1,0 +1,66 @@
+ Address    Code        Basic                     Source
+
+0x00400000  0x240d0001  addiu $13,$0,0x00000006        addiu   $t5, $zero, 1           # t5 = constant 1
+0x00400004  0x24180001  addiu $24,$0,0x00000007        addiu   $t8, $zero, 1           # t8 = 1: swap performed
+0x00400008  0x00000000  nop                   8        nop
+0x0040000c  0x00000000  nop                   9        nop
+0x00400010  0x00000000  nop                   10       nop
+0x00400014  0x13000036  beq $24,$0,0x00000036 13       beq     $t8, $zero, end         # Verifies if a swap has ocurred
+0x00400018  0x00000000  nop                   14       nop
+0x0040001c  0x00000000  nop                   15       nop
+0x00400020  0x00000000  nop                   16       nop
+0x00400024  0x3c011001  lui $1,0x00001001     18       lui $1,0x00001001
+0x00400028  0x00000000  nop                   19       nop
+0x0040002c  0x00000000  nop                   20       nop
+0x00400030  0x00000000  nop                   21       nop
+0x00400034  0x34280000  ori $8,$1,0x00000000  22       ori $8,$1,0x00000000
+0x00400038  0x3c011001  lui $1,0x00001001     24       lui $1,0x00001001
+0x0040003c  0x00000000  nop                   25       nop
+0x00400040  0x00000000  nop                   26       nop
+0x00400044  0x00000000  nop                   27       nop
+0x00400048  0x342e001c  ori $14,$1,0x0000001c 28       ori $14,$1,0x0000001c
+0x0040004c  0x00000000  nop                   29       nop
+0x00400050  0x00000000  nop                   30       nop
+0x00400054  0x00000000  nop                   31       nop
+0x00400058  0x8dce0000  lw $14,0x00000000($14)32       lw      $t6, 0($t6)             # t6 <- size    
+0x0040005c  0x24180000  addiu $24,$0,0x000000033       addiu   $t8, $zero, 0           # swap <- 0
+0x00400060  0x8d090000  lw $9,0x00000000($8)  36       lw      $t1, 0($t0)             # t1 <- array[i]
+0x00400064  0x8d0a0004  lw $10,0x00000004($8) 37       lw      $t2, 4($t0)             # t2 <- array[i+1]
+0x00400068  0x00000000  nop                   38       nop
+0x0040006c  0x00000000  nop                   39       nop
+0x00400070  0x00000000  nop                   40       nop
+0x00400074  0x0149782a  slt $15,$10,$9        41       slt     $t7, $t2, $t1           # array[i+1] < array[i] ?
+0x00400078  0x00000000  nop                   42       nop
+0x0040007c  0x00000000  nop                   43       nop
+0x00400080  0x00000000  nop                   44       nop
+0x00400084  0x11ed0010  beq $15,$13,0x0000001045       beq     $t7, $t5, swap          # Branch if array[i+1] < array[i]
+0x00400088  0x00000000  nop                   46       nop
+0x0040008c  0x00000000  nop                   47       nop
+0x00400090  0x00000000  nop                   48       nop
+0x00400094  0x25080004  addiu $8,$8,0x0000000451       addiu   $t0, $t0, 4             # t0 points the next element
+0x00400098  0x25ceffff  addiu $14,$14,0xffffff52       addiu   $t6, $t6, -1            # size--
+0x0040009c  0x00000000  nop                   53       nop
+0x004000a0  0x00000000  nop                   54       nop
+0x004000a4  0x00000000  nop                   55       nop
+0x004000a8  0x11cdffda  beq $14,$13,0xffffffda56       beq     $t6, $t5, while         # Verifies if all elements were compared
+0x004000ac  0x00000000  nop                   57       nop
+0x004000b0  0x00000000  nop                   58       nop
+0x004000b4  0x00000000  nop                   59       nop
+0x004000b8  0x08100018  j 0x00400060          60       j       loop    
+0x004000bc  0x00000000  nop                   61       nop
+0x004000c0  0x00000000  nop                   62       nop
+0x004000c4  0x00000000  nop                   63       nop
+0x004000c8  0xad090004  sw $9,0x00000004($8)  67       sw      $t1, 4($t0)
+0x004000cc  0xad0a0000  sw $10,0x00000000($8) 68       sw      $t2, 0($t0)
+0x004000d0  0x24180001  addiu $24,$0,0x000000069       addiu   $t8, $zero, 1           # Indicates a swap
+0x004000d4  0x00000000  nop                   70       nop
+0x004000d8  0x00000000  nop                   71       nop
+0x004000dc  0x00000000  nop                   72       nop
+0x004000e0  0x08100025  j 0x00400094          73       j       continue
+0x004000e4  0x00000000  nop                   74       nop
+0x004000e8  0x00000000  nop                   75       nop
+0x004000ec  0x00000000  nop                   76       nop
+0x004000f0  0x0810003c  j 0x004000f0          79       j       end 
+0x004000f4  0x00000000  nop                   80       nop
+0x004000f8  0x00000000  nop                   81       nop
+0x004000fc  0x00000000  nop                   82       nop

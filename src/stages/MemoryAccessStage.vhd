@@ -40,7 +40,7 @@ end entity MemoryAccessStage;
 
 architecture RTL of MemoryAccessStage is
 
-	signal , WritebackDataAsync: std_logic_vector(31 downto 0);
+	signal DataFromMemMux, WritebackDataAsync: std_logic_vector(31 downto 0);
 
 begin
 
@@ -49,16 +49,17 @@ begin
 	OutputInterface.DataMemDataIn <= InputInterface.RegBankPassthrough;  -- TODO: mask off bits for SB and SH
 
 	-- Asynchronously reads from memory
-	OutputInterface.DataMemAddress <= x"0000" & InputInterface.ALUData(15 downto 0) if InputInterface.MemoryAccessGranularity = "01" else
-									  x"000000" & InputInterface.ALUData(7 downto 0) if InputInterface.MemoryAccessGranularity = "10" else
-									  InputInterface.ALUData;
+	--OutputInterface.DataMemAddress <= x"0000" & InputInterface.ALUData(15 downto 0) when InputInterface.MemoryAccessGranularity = "01" else
+									  --x"000000" & InputInterface.ALUData(7 downto 0) when InputInterface.MemoryAccessGranularity = "10" else
+									  --InputInterface.ALUData;
+    OutputInterface.DataMemAddress <= InputInterface.ALUData;
 	
-	-- Determines writeback data format  -- TODO: LUIFlag can be merged into MemoryAccessGranularity "11"
-	DataFromMemMux <= InputInterface.DataMemDataOut(15 downto 0) & x"0000" when InputInterface.LUIFlag = '1' else
-					  resize(unsigned(InputInterface.DataMemDataOut(15 downto 0)), 16) when InputInterface.MemoryAccessGranularity = "01" and InputInterface.MemoryAccessUnsigned = '1' else
-					  resize(signed(InputInterface.DataMemDataOut(15 downto 0)), 16) when InputInterface.MemoryAccessGranularity = "01" and InputInterface.MemoryAccessUnsigned = '0' else
-					  resize(unsigned(InputInterface.DataMemDataOut(7 downto 0)), 8) when InputInterface.MemoryAccessGranularity = "10" and InputInterface.MemoryAccessUnsigned = '1' else
-					  resize(signed(InputInterface.DataMemDataOut(7 downto 0)), 8) when InputInterface.MemoryAccessGranularity = "10" and InputInterface.MemoryAccessUnsigned = '0' else
+	-- Determines writeback data format 
+	--DataFromMemMux <= ((InputInterface.DataMemDataOut(15 downto 0)) & x"0000") when InputInterface.LUIFlag = '1' else
+	DataFromMemMux <= std_logic_vector(resize(unsigned(InputInterface.DataMemDataOut(15 downto 0)), 32)) when InputInterface.MemoryAccessGranularity = "01" and InputInterface.MemoryAccessUnsigned = '1' else
+					  std_logic_vector(resize(signed(InputInterface.DataMemDataOut(15 downto 0)), 32)) when InputInterface.MemoryAccessGranularity = "01" and InputInterface.MemoryAccessUnsigned = '0' else
+					  std_logic_vector(resize(unsigned(InputInterface.DataMemDataOut(7 downto 0)), 32)) when InputInterface.MemoryAccessGranularity = "10" and InputInterface.MemoryAccessUnsigned = '1' else
+					  std_logic_vector(resize(signed(InputInterface.DataMemDataOut(7 downto 0)), 32)) when InputInterface.MemoryAccessGranularity = "10" and InputInterface.MemoryAccessUnsigned = '0' else
 					  InputInterface.DataMemDataOut;  -- MemoryAccessGranularity = "00"
 
 	WritebackDataAsync <=  DataFromMemMux when InputInterface.MemoryAccessFlag = '1' else
@@ -70,16 +71,16 @@ begin
 
 		if Reset = '1' then
 
-			OutputInterface.WritebackData <= (others => '0');
 			OutputInterface.WritebackEnable <= '0';
 			OutputInterface.WritebackReg <= "00000";
-
+			OutputInterface.WritebackData <= (others => '0');
+			
 		elsif rising_edge(Clock) then
 
-			OutputInterface.WritebackData <= WritebackDataAsync;
 			OutputInterface.WritebackEnable <= InputInterface.WritebackEnable;
 			OutputInterface.WritebackReg <= InputInterface.WritebackReg;
-
+			OutputInterface.WritebackData <= WritebackDataAsync;
+			
 		end if;
 
 	end process PipelineRegisters;
