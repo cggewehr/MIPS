@@ -1,0 +1,9 @@
+// # Reads HDL source files into Genus.
+MIPS_PKG.vhd \
+FetchStage.vhd \
+DecodeStage.vhd \
+ExecuteStage.vhd \
+MemoryAccessStage.vhd \
+WritebackStage.vhd \
+MIPS_Top.vhd \
+
