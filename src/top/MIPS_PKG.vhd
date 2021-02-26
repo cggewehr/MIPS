@@ -29,6 +29,10 @@ package MIPS_PKG is
 
 		-- Next instruction, read from instruction memory in the Fetch stage
 		Instruction: std_logic_vector(31 downto 0);
+		
+		-- Feedback from Execute stage regarding branch status
+		BranchOverride: std_logic;
+		BranchStateEnable: std_logic;
 
 		-- Writeback info, from Writeback stage
 		WritebackEnable: std_logic;
@@ -43,9 +47,17 @@ package MIPS_PKG is
 		Data1: std_logic_vector(31 downto 0);
 		Data2: std_logic_vector(31 downto 0);
 		IMM: std_logic_vector(15 downto 0);
+		RS: std_logic_vector(4 downto 0);
+		RT: std_logic_vector(4 downto 0);
+
+		-- Data from Writeback stage, used in forwarding unit
+		WBStageData: std_logic_vector(31 downto 0);
+		WBStageReg: std_logic_vector(4 downto 0);
+		WBStageEnable: std_logic;
 
 		-- PC + 4, used in computing the jump address in a branch instruction
-		IncrementedPC: std_logic_vector(31 downto 0);
+		--IncrementedPC: std_logic_vector(31 downto 0);
+		BranchWasTaken: std_logic;
 
 		-- Execute stage control signals
 		ALUOP: std_logic_vector(2 downto 0);
@@ -87,8 +99,10 @@ package MIPS_PKG is
 
 		-- Data to be written on memory at the specified address
 		RegBankPassThrough: std_logic_vector(31 downto 0);
+
+		RT: std_logic_vector(4 downto 0);
 		
-		LuiFlag: std_logic;
+		--LuiFlag: std_logic;
 		
 	    DataMemDataOut: std_logic_vector(31 downto 0);
 
@@ -130,12 +144,17 @@ package MIPS_PKG is
 	type DecodeOutput is record
 
 		-- Passes-through PC + 4, used in computing the jump address in the Execute stage
-		IncrementedPC: std_logic_vector(31 downto 0);
+		--IncrementedPC: std_logic_vector(31 downto 0);
+		BranchWasTaken: std_logic;
+		BranchTakeFlag: std_logic;
+		BranchAddress: std_logic_vector(31 downto 0);
 
 		-- Data values read from register bank
 		Data1: std_logic_vector(31 downto 0);
 		Data2: std_logic_vector(31 downto 0);
 		IMM: std_logic_vector(15 downto 0);
+		RS: std_logic_vector(4 downto 0);
+		RT: std_logic_vector(4 downto 0);
 
 		-- Execute control signals
 		ALUOP: std_logic_vector(2 downto 0);
@@ -176,10 +195,13 @@ package MIPS_PKG is
 		-- Memory Access stage data
 		ALUResult: std_logic_vector(31 downto 0);
 		RegBankPassthrough: std_logic_vector(31 downto 0);
+		RT: std_logic_vector(4 downto 0);
 		
 		-- Computed branch information
-		BranchTakeFlag: std_logic;
-		BranchAddress: std_logic_vector(31 downto 0);
+		--BranchTakeFlag: std_logic;
+		--BranchAddress: std_logic_vector(31 downto 0);
+		BranchOverride: std_logic;
+		BranchStateEnable: std_logic;
 
 		-- Memory Access stage control signals
 		--LUIFlag: std_logic;

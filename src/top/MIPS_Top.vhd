@@ -11,12 +11,11 @@
 --              interface connections
 --------------------------------------------------------------------------------
 -- Revisions   : v0.01 - Gewehr: Initial implementation (no MUL/DIV, no SYSCALL, no forwarding, branch decision @ third stage, no stall/flush controls)
+--             : v0.1 - Gewehr: Implements forwarding and branch predictor
 --------------------------------------------------------------------------------
 -- TODO        : Implement multiplication and division instructions
 --               Implement SYSCALL and BREAK instructions
---               Implement Forwarding
 --               Implement branch decisions @ second stage
---               Implement pipeline stall/flush
 --------------------------------------------------------------------------------
 
 
@@ -69,6 +68,11 @@ architecture Pipeline of MIPS is
 	-- Writeback stage entity interfaces
 	signal WritebackInput: WritebackInput;
 	signal WritebackOutput: WritebackOutput;
+	
+	-- Pipeline Stall and Flush controls (from Decode stage)
+	signal PipelineStall: std_logic_vector(0 to 3);
+	signal PipelineFlush: std_logic_vector(0 to 3);
+	signal PipelineExcept: std_logic_vector(0 to 3);
 
 begin
 
@@ -77,8 +81,8 @@ begin
 	InstructionMemoryAddress <= FetchOutput.InstructionMemoryAddress;
 
 	-- Data from Execute stage
-	FetchInput.BranchAddress <= ExecuteOutput.BranchAddress;
-	FetchInput.BranchTakeFlag <= ExecuteOutput.BranchTakeFlag;
+	FetchInput.BranchAddress <= DecodeOutput.BranchAddress;
+	FetchInput.BranchTakeFlag <= DecodeOutput.BranchTakeFlag;
 
 	-- Instantiate Fetch stage
 	FetchStage: entity work.FetchStage
@@ -87,6 +91,10 @@ begin
 			
 			Clock => Clock,
 			Reset => Reset,
+			
+			Stall => PipelineStall(0),
+			Flush => PipelineFlush(0),
+			Except => PipelineExcept(0),
 
 			InputInterface => FetchInput,
 			OutputInterface => FetchOutput
@@ -96,6 +104,10 @@ begin
 	-- Data from Fetch stage
 	DecodeInput.Instruction <= FetchOutput.Instruction;
 	DecodeInput.IncrementedPC <= FetchOutput.IncrementedPC;
+	
+	-- Branch control from Execute stage
+    DecodeInput.BranchOverride <= ExecuteOutput.BranchOverride;
+    DecodeInput.BranchStateEnable <= ExecuteOutput.BranchStateEnable;
 
 	-- Data & control from Writeback stage
 	DecodeInput.WritebackData <= WritebackOutput.WritebackData;
@@ -109,6 +121,13 @@ begin
 			
 			Clock => Clock,
 			Reset => Reset,
+			
+			Stall => PipelineStall(1),
+			Flush => PipelineFlush(1),
+			Except => PipelineExcept(1),
+			
+			PipelineStall => PipelineStall,
+			PipelineFlush => PipelineFlush,
 
 			InputInterface => DecodeInput,
 			OutputInterface => DecodeOutput
@@ -119,8 +138,15 @@ begin
 	-- Data from Decode stage
 	ExecuteInput.Data1 <= DecodeOutput.Data1;
 	ExecuteInput.Data2 <= DecodeOutput.Data2;
+	ExecuteInput.RS <= DecodeOutput.RS;
+	ExecuteInput.RT <= DecodeOutput.RT;
 	ExecuteInput.IMM <= DecodeOutput.IMM;
-	ExecuteInput.IncrementedPC <= DecodeOutput.IncrementedPC;
+	--ExecuteInput.IncrementedPC <= DecodeOutput.IncrementedPC;
+	
+	-- Data from Writeback stage (forwarding)
+	ExecuteInput.WBStageData <= WritebackOutput.WritebackData;
+	ExecuteInput.WBStageReg <= WritebackOutput.WritebackReg;
+	ExecuteInput.WBStageEnable <= WritebackOutput.WritebackEnable;
 
 	-- Control from Decode stage
 	ExecuteInput.ALUOP <= DecodeOutput.ALUOP;
@@ -129,6 +155,7 @@ begin
 	ExecuteInput.ArithmeticUnsignedFlag <= DecodeOutput.ArithmeticUnsignedFlag;
 
 	ExecuteInput.BranchInstructionFlag <= DecodeOutput.BranchInstructionFlag;
+	ExecuteInput.BranchWasTaken <= DecodeOutput.BranchWasTaken;
 	ExecuteInput.ComparatorMasks <= DecodeOutput.ComparatorMasks;
 	ExecuteInput.BranchInstructionAroundZero <= DecodeOutput.BranchInstructionAroundZero;
 	ExecuteInput.JumpFromImmediate <= DecodeOutput.JumpFromImmediate;
@@ -140,7 +167,7 @@ begin
 	ExecuteInput.ShifterFlag <= DecodeOutput.ShifterFlag;
 	ExecuteInput.ShifterArithmetic <= DecodeOutput.ShifterArithmetic;
 	ExecuteInput.ShifterLeft <= DecodeOutput.ShifterLeft;
-	ExecuteInput.ShifterVariable <= DecodeOutput.ShifterLeft;
+	ExecuteInput.ShifterVariable <= DecodeOutput.ShifterVariable;
 
 	-- Memory Access stage control signals
 	ExecuteInput.LUIFlag <= DecodeOutput.LUIFlag;
@@ -160,6 +187,10 @@ begin
 			
 			Clock => Clock,
 			Reset => Reset,
+			
+			Stall => PipelineStall(2),
+			Flush => PipelineFlush(2),
+			Except => PipelineExcept(2),
 
 			InputInterface => ExecuteInput,
 			OutputInterface => ExecuteOutput
@@ -175,6 +206,7 @@ begin
 	-- Data from Execute stage
 	MemoryAccessInput.ALUData <= ExecuteOutput.ALUResult;
 	MemoryAccessInput.RegBankPassthrough <= ExecuteOutput.RegBankPassthrough;
+	MemoryAccessInput.RT <= ExecuteOutput.RT;
 
 	-- Control signals from Execute stage
 	MemoryAccessInput.MemoryAccessFlag <= ExecuteOutput.MemoryAccessFlag;
@@ -193,6 +225,10 @@ begin
 			
 			Clock => Clock,
 			Reset => Reset,
+			
+			Stall => PipelineStall(3),
+			Flush => PipelineFlush(3),
+			Except => PipelineExcept(3),
 
 			InputInterface => MemoryAccessInput,
 			OutputInterface => MemoryAccessOutput

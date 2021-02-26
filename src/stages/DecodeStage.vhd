@@ -10,8 +10,10 @@
 -- Description : Implements Decode stage in the 5 stage pipeline
 --------------------------------------------------------------------------------
 -- Revisions   : v0.01 - Gewehr: Initial implementation
+--             : v0.1 - Gewehr: Changed RegBank reads from async to falling edge triggered
 --------------------------------------------------------------------------------
--- TODO        : 
+-- TODO        : Use shifter info for LUI instruction, so that a specific flag is not needed anymore
+--               Implement branch decision at Decode stage
 --------------------------------------------------------------------------------
 
 
@@ -26,7 +28,8 @@ library work;
 entity DecodeStage is
 
 	generic(
-		EnableForwarding: boolean := false
+		BranchPredictorDepth: integer := 2;
+		BranchDelaySlot: boolean := False
 	);
 
 	port(
@@ -34,8 +37,15 @@ entity DecodeStage is
 		Clock: in std_logic;  -- From top level entity
 		Reset: in std_logic;  -- From top level entity
 
+		Stall: in std_logic;
+		Flush: in std_logic;
+		Except: out std_logic;
+		
+		PipelineStall: out std_logic_vector(0 to 3);
+		PipelineFlush: out std_logic_vector(0 to 3);
+
 		InputInterface: in DecodeInput;  -- Defined in MIPS_PKG
-		OutputInterface: out DecodeOutput  -- Defined in MIPS_PKG
+		OutputInterface: inout DecodeOutput  -- Defined in MIPS_PKG
 
 	);
 	
@@ -46,6 +56,9 @@ architecture RTL of DecodeStage is
 
 	type RegisterBank_t is array(1 to 31) of std_logic_vector(31 downto 0);
 	signal RegisterBank: RegisterBank_t;
+
+	-- Branch Predictor
+	signal BranchTakeFlag: std_logic;
 
 	-- Defines fields from fetched instruction for R type instructions
 	alias OPCODE: std_logic_vector(5 downto 0) is InputInterface.Instruction(31 downto 26); 
@@ -109,34 +122,137 @@ architecture RTL of DecodeStage is
     signal RegData1Async: std_logic_vector(31 downto 0);
     signal RegData2Async: std_logic_vector(31 downto 0);
 
-    -- MUXES to Data ports
-    signal Data1Async: std_logic_vector(31 downto 0);
-    signal Data2Async: std_logic_vector(31 downto 0);
+    -- Data read from RegBank
+    signal Data1: std_logic_vector(31 downto 0);
+    signal Data2: std_logic_vector(31 downto 0);
 
 begin
 
 	-- Reads from Register Bank and forwards writeback data
-	RegBankForwardRead: if EnableForwarding generate
+	--RegBankForwardRead: if EnableForwarding generate
 
-		RegData1Async <= (others => '0') when RS = "00000" else 
-						 RegisterBank(to_integer(unsigned(RS))) when RS /= InputInterface.WritebackReg else 
-						 InputInterface.WritebackData;
+	--	RegData1Async <= (others => '0') when RS = "00000" else 
+	--					 RegisterBank(to_integer(unsigned(RS))) when RS /= InputInterface.WritebackReg else 
+	--					 InputInterface.WritebackData;
 
-		RegData2Async <= (others => '0') when RT = "00000" else 
-						 RegisterBank(to_integer(unsigned(RT))) when RT /= InputInterface.WritebackReg else 
-						 InputInterface.WritebackData;
+	--	RegData2Async <= (others => '0') when RT = "00000" else 
+	--					 RegisterBank(to_integer(unsigned(RT))) when RT /= InputInterface.WritebackReg else 
+	--					 InputInterface.WritebackData;
 
-	end generate RegBankForwardRead;
+	--end generate RegBankForwardRead;
 
-	-- Reads from Register Bank and dont forward writeback data
-	RegBankNoForwardRead: if not EnableForwarding generate
+	---- Reads from Register Bank and dont forward writeback data
+	--RegBankNoForwardRead: if not EnableForwarding generate
 
-		RegData1Async <= (others => '0') when RS = "00000" or RS = "UUUUU" else RegisterBank(to_integer(unsigned(RS)));
-		--RegData1Async <= RegisterBank(to_integer(unsigned(RS))) when RS /= "00000" else (others => '0');
-		RegData2Async <= (others => '0') when RT = "00000" or RT = "UUUUU" else RegisterBank(to_integer(unsigned(RT)));
-		--RegData2Async <= RegisterBank(to_integer(unsigned(RT))) when RT /= "00000" else (others => '0');
+	--	RegData1Async <= (others => '0') when RS = "00000" or RS = "UUUUU" else RegisterBank(to_integer(unsigned(RS)));
+	--	--RegData1Async <= RegisterBank(to_integer(unsigned(RS))) when RS /= "00000" else (others => '0');
+	--	RegData2Async <= (others => '0') when RT = "00000" or RT = "UUUUU" else RegisterBank(to_integer(unsigned(RT)));
+	--	--RegData2Async <= RegisterBank(to_integer(unsigned(RT))) when RT /= "00000" else (others => '0');
 
-	end generate RegBankNoForwardRead;
+	--end generate RegBankNoForwardRead;
+
+	BranchPredictor: block is
+
+		signal BranchPredictorState: std_logic_vector(BranchPredictorDepth - 1 downto 0);
+
+		--signal BranchTakeFlag: std_logic;  NOW DECLARED @ ENTITY
+		signal BranchAddress: std_logic_vector(31 downto 0);
+		signal BranchPCSaved: std_logic_vector(31 downto 0);
+
+	begin
+
+		BranchTakeFlag <= BranchPredictorState(BranchPredictorDepth - 1) when BranchInstructionFlagAsync = '1' else
+						  '1' when JumpFromImmediateAsync = '1' or InputInterface.BranchOverride = '1' else 
+						  '0';
+
+		OutputInterface.BranchTakeFlag <= BranchTakeFlag;
+
+		--OutputInterface.BranchAddress <= InputInterface.IncrementedPC(31 downto 28) & BASE & "00" when JumpFromImmediateAsync = '1' else  -- J or JAL instructions
+		BranchAddress <= BranchPCSaved when InputInterface.BranchOverride = '1' else
+						 InputInterface.IncrementedPC(31 downto 28) & BASE & "00" when JumpFromImmediateAsync = '1' else  -- J or JAL instructions
+						 std_logic_vector(signed(InputInterface.IncrementedPC) + (resize(signed(IMM), 30) & "00"));  -- when BranchInstructionFlagAsync = '1' else  -- Other branch instructions
+
+        OutputInterface.BranchAddress <= BranchAddress;
+
+		BranchControlProc: process(Clock, Reset) begin
+
+			if Reset = '1' then
+
+				BranchPredictorState <= (BranchPredictorDepth - 1 => '0', others => '1');  -- Inits to weak not taken
+				BranchPCSaved <= (others => '0');
+
+			elsif rising_edge(Clock) then
+
+				-- Updates branch predictor state
+				-- Branch wrongfully taken
+				if OutputInterface.BranchWasTaken = '1' and InputInterface.BranchOverride = '1' and InputInterface.BranchStateEnable = '1' then
+					BranchPredictorState <= std_logic_vector(unsigned(BranchPredictorState) - 1);
+
+				-- Branch wrongfully not taken
+				elsif OutputInterface.BranchWasTaken = '0' and InputInterface.BranchOverride = '1' and InputInterface.BranchStateEnable = '1' then
+					BranchPredictorState <= std_logic_vector(unsigned(BranchPredictorState) + 1);
+
+				-- Branch rightfully taken
+				elsif OutputInterface.BranchWasTaken = '1' and InputInterface.BranchOverride = '0' and InputInterface.BranchStateEnable = '1' then
+
+					if BranchPredictorState /= (BranchPredictorDepth - 1 downto 0 => '1') then
+						BranchPredictorState <= std_logic_vector(unsigned(BranchPredictorState) + 1);
+					end if;
+
+				-- Branch rightfully not taken
+				elsif OutputInterface.BranchWasTaken = '0' and InputInterface.BranchOverride = '0' and InputInterface.BranchStateEnable = '1' then 
+
+					if BranchPredictorState /= (BranchPredictorDepth - 1 downto 0 => '0') then
+						BranchPredictorState <= std_logic_vector(unsigned(BranchPredictorState) - 1);
+					end if;
+
+				end if;
+
+				-- Saves IncrememtedPC if branch is taken or computed branch address if branch is not taken
+				if BranchInstructionFlagAsync = '1' and BranchPredictorState(BranchPredictorDepth - 1) = '1' then
+					BranchPCSaved <= InputInterface.IncrementedPC;
+
+				elsif BranchInstructionFlagAsync = '1' and BranchPredictorState(BranchPredictorDepth - 1) = '0' then
+					BranchPCSaved <= BranchAddress;
+
+				end if;
+
+			end if;
+
+		end process BranchControlProc;
+
+	end block BranchPredictor;
+
+
+	-- Reads from Register Bank @ clock falling edge
+	--RegBankRead: process(Clock, Reset) begin
+	RegBankRead: process(Reset, RS, RT, RegisterBank) begin
+
+		if Reset = '1' or RS = "UUUUU" or RT = "UUUUU" then
+
+			Data1 <= (others => '0');
+			Data2 <= (others => '0');
+
+		--elsif falling_edge(Clock) then
+		else
+            
+            --Data1 <= RegisterBank(to_integer(unsigned(RS))) when RS /= "00000" else (others => '0');
+            if RS = "00000" then
+                Data1 <= (others => '0');
+            else
+                Data1 <= RegisterBank(to_integer(unsigned(RS)));
+            end if;
+            
+            --Data2 <= RegisterBank(to_integer(unsigned(RT))) when RT /= "00000" else (others => '0');
+            if RT = "00000" then 
+                Data2 <= (others => '0');
+            else
+                Data2 <= RegisterBank(to_integer(unsigned(RT)));
+            end if;
+			
+		end if;
+
+	end process RegBankRead;
 
 
 	-- Writes to Register Bank
@@ -145,7 +261,8 @@ begin
 		if Reset = '1' then
 			RegisterBank <= (others => (others => '0'));
 
-		elsif rising_edge(Clock) then
+		--elsif rising_edge(Clock) then
+		elsif falling_edge(Clock) then
 
 			if InputInterface.WritebackReg /= "00000" then
 
@@ -156,7 +273,7 @@ begin
 
 			end if;
 
-			-- TODO: Write PC + 4 to $31 if (BGEZAL, BLTZAL, JAL, JRAL). (Implement branch decision on 2nd stage first)
+			-- TODO: Write PC + 4 to $31 if (BGEZAL, BLTZAL, JAL, JRAL). (Implement branch address computation on 2nd stage first)
 
 		end if;
 
@@ -266,7 +383,8 @@ begin
 
 
 	-- 
-	WritebackEnableAsync <= '1' when (RTypeFlagAsync = '1' and InputInterface.Instruction /= x"00000000" and FUNCT /= "01000") or ArithmeticImmediateFlagAsync = '1' or (MemoryAccessFlagAsync = '1' and MemoryAccessLoadAsync = '1') or BranchInstructionLinkAsync = '1' or LUIFlagAsync = '1' else '0';
+	--WritebackEnableAsync <= '1' when (RTypeFlagAsync = '1' and InputInterface.Instruction /= x"00000000" and FUNCT /= "01000") or ArithmeticImmediateFlagAsync = '1' or (MemoryAccessFlagAsync = '1' and MemoryAccessLoadAsync = '1') or BranchInstructionLinkAsync = '1' or LUIFlagAsync = '1' else '0';
+	WritebackEnableAsync <= '1' when (RTypeFlagAsync = '1' and InputInterface.Instruction /= x"00000000" and FUNCT /= "001000") or ArithmeticImmediateFlagAsync = '1' or (MemoryAccessFlagAsync = '1' and MemoryAccessLoadAsync = '1') or BranchInstructionLinkAsync = '1' or LUIFlagAsync = '1' else '0';
 
 	-- 
 	WritebackRegAsync <= RD when RTypeFlagAsync = '1' or (OPCODE = "000000" and RT = "00000" and SHAMT = "00000" and FUNCT = "001001") else  -- R type or JRAL
@@ -274,13 +392,67 @@ begin
 						 "11111";  -- $RA for JAL
 
 
-	Data1Async <= --InputInterface.IncrementedPC when JumpFromImmediateAsync = '1' else  --or BranchInstructionFlagAsync = '1' else  -- J or JAL instructions
-				  RegData1Async;
+	--Data1Async <= --InputInterface.IncrementedPC when JumpFromImmediateAsync = '1' else  --or BranchInstructionFlagAsync = '1' else  -- J or JAL instructions
+				  --RegData1Async;
 
-	Data2Async <= InputInterface.IncrementedPC(31 downto 28) & BASE & "00" when JumpFromImmediateAsync = '1' else  -- J or JAL instructions
-			      RegData2Async;  -- when RTypeFlagAsync = '1' or ShifterFlagAsync = '1';  
+	--Data2Async <= InputInterface.IncrementedPC(31 downto 28) & BASE & "00" when JumpFromImmediateAsync = '1' else  -- J or JAL instructions
+	--Data2Async <= RegData2Async;  -- when RTypeFlagAsync = '1' or ShifterFlagAsync = '1';  
 				  --resize(signed(InputInterface.IMM), 32) when ArithmeticExtendFlagAsync = '1' else
 				  --resize(unsigned(InputInterface.IMM), 32);
+
+
+	-- Controls Stall/Flush of pipeline stages
+	PipelineManager: block is
+		--signal ReadAfterLoadFlag: std_logic;
+	begin
+
+		process(Clock, Reset) begin
+
+			if Reset = '1' then
+
+				PipelineStall <= (others => '0');
+				PipelineFlush <= (others => '0');
+
+				--ReadAfterLoadFlag <= '0';
+
+			--elsif rising_edge(Clock) then
+			-- Writes flags @ clock falling edge so that stages can appropriately set their pipeline registers @ clock rising edge
+			-- Inputs to Pipeline Manager are from pipeline registers, so there are no timing concerns with this approach 
+			elsif falling_edge(Clock) then
+
+				-- Default values
+				PipelineStall <= (others => '0');
+				PipelineFlush <= (others => '0');
+
+				-- Check for wrongfull branch. "BranchOverride" comes from MEM/WB pipeline register
+				if InputInterface.BranchOverride = '1' then
+					--PipelineFlush <= "1110";
+					PipelineFlush <= (3 => '0', others => '1');
+				--end if;
+
+				-- Check for Read after Load.
+				elsif OutputInterface.MemoryAccessLoad = '1' and (RTypeFlagAsync = '1' or ArithmeticImmediateFlagAsync = '1') and (OutputInterface.WritebackReg = RS or OutputInterface.WritebackReg = RT) then
+				    
+					--PipelineStall <= "1000";
+					PipelineStall <= (0 => '1', others => '0');
+					--PipelineFlush <= "0100";
+					PipelineFlush <= (1 => '1', others => '0');
+
+				-- Check for unconditional jumps
+				elsif JumpUnconditionalFlagAsync = '1' and not BranchDelaySlot then
+
+					--PipelineFlush <= "1000";
+					PipelineFlush <= (0 => '1', others => '0');
+
+				end if;
+				
+				-- TODO: Stall if "jr" instruction is issued and jump register has not been written back yet
+
+			end if;
+
+		end process;
+
+	end block PipelineManager;
 
 
 	-- Pipeline Registers
@@ -288,11 +460,16 @@ begin
 
 		if Reset = '1' then
 
+			Except <= '0';
+
 			-- To Execute stage
 			OutputInterface.Data1 <= (others => '0');
 			OutputInterface.Data2 <= (others => '0');
 			OutputInterface.IMM <= (others => '0');
-			OutputInterface.IncrementedPC <= (others => '0');
+			OutputInterface.RS <= (others => '0');  -- To Forwarding Unit
+			OutputInterface.RT <= (others => '0');  -- To Forwarding Unit
+			--OutputInterface.IncrementedPC <= (others => '0');
+			OutputInterface.BranchWasTaken <= '0';
 
 			-- Execute stage control signals
 			OutputInterface.ALUOP <= "000";
@@ -327,47 +504,64 @@ begin
 			
 		elsif rising_edge(Clock) then
 
-			-- Execute stage data
-			OutputInterface.Data1 <= Data1Async;
-			OutputInterface.Data2 <= Data2Async;
-			OutputInterface.IMM <= IMM;
-			OutputInterface.IncrementedPC <= InputInterface.IncrementedPC;
+			if Stall = '0' then
 
-			-- Execute stage control signals
-			OutputInterface.ALUOP <= ALUOPAsync;
-			OutputInterface.ArithmeticExtendFlag <= ArithmeticExtendFlagAsync;
-            OutputInterface.ArithmeticImmediateFlag <= ArithmeticImmediateFlagAsync;
-            OutputInterface.ArithmeticUnsignedFlag <= ArithmeticUnsignedFlagAsync;
+				-- Execute stage data
+				--OutputInterface.Data1 <= Data1Async;
+				OutputInterface.Data1 <= Data1;
+				--OutputInterface.Data2 <= Data2Async;
+				OutputInterface.Data2 <= Data2;
+				OutputInterface.IMM <= IMM;
+				OutputInterface.RS <= RS;  -- To Forwarding Unit
+				OutputInterface.RT <= RT;  -- To Forwarding Unit
+				--OutputInterface.IncrementedPC <= InputInterface.IncrementedPC;
+				OutputInterface.BranchWasTaken <= BranchTakeFlag;
 
-			OutputInterface.BranchInstructionFlag <= BranchInstructionFlagAsync;
-			OutputInterface.BranchInstructionAroundZero <= BranchInstructionAroundZeroAsync;
-			OutputInterface.ComparatorMasks <= ComparatorMasksAsync;
-			OutputInterface.JumpFromImmediate <= JumpFromImmediateAsync;
+				-- Execute stage control signals
+				OutputInterface.ALUOP <= ALUOPAsync;
+				OutputInterface.ArithmeticExtendFlag <= ArithmeticExtendFlagAsync;
+	            OutputInterface.ArithmeticImmediateFlag <= ArithmeticImmediateFlagAsync;
+	            OutputInterface.ArithmeticUnsignedFlag <= ArithmeticUnsignedFlagAsync;
+	            OutputInterface.LUIFlag <= LUIFlagAsync;
 
-			OutputInterface.SetFlag <= SetFlagAsync;
-			OutputInterface.SetImmediate <= SetImmediateAsync;
-			OutputInterface.SetUnsigned <= SetUnsignedAsync;
+				OutputInterface.BranchInstructionFlag <= BranchInstructionFlagAsync;
+				OutputInterface.BranchInstructionAroundZero <= BranchInstructionAroundZeroAsync;
+				OutputInterface.ComparatorMasks <= ComparatorMasksAsync;
+				OutputInterface.JumpFromImmediate <= JumpFromImmediateAsync;
 
-			OutputInterface.ShifterFlag <= ShifterFlagAsync;
-			OutputInterface.ShifterArithmetic <= ShifterArithmeticAsync;
-			OutputInterface.ShifterLeft <= ShifterLeftAsync;
-			OutputInterface.ShifterVariable <= ShifterLeftAsync;
+				OutputInterface.SetFlag <= SetFlagAsync;
+				OutputInterface.SetImmediate <= SetImmediateAsync;
+				OutputInterface.SetUnsigned <= SetUnsignedAsync;
 
-			-- Memory Access stage control signals
-			OutputInterface.LUIFlag <= LUIFlagAsync;
-			OutputInterface.MemoryAccessFlag <= MemoryAccessFlagAsync;
-			OutputInterface.MemoryAccessLoad <= MemoryAccessLoadAsync;
-			OutputInterface.MemoryAccessUnsigned <= MemoryAccessUnsignedAsync;
-			OutputInterface.MemoryAccessGranularity <= MemoryAccessGranularityAsync;
+				OutputInterface.ShifterFlag <= ShifterFlagAsync;
+				OutputInterface.ShifterArithmetic <= ShifterArithmeticAsync;
+				OutputInterface.ShifterLeft <= ShifterLeftAsync;
+				OutputInterface.ShifterVariable <= ShifterVariableAsync;
 
-			-- Writeback stage control signals
-			OutputInterface.WritebackEnable <= WritebackEnableAsync;
-			OutputInterface.WritebackReg <= WritebackRegAsync;
+				-- Memory Access stage control signals
+				if Flush = '1' then
+					OutputInterface.MemoryAccessFlag <= '0';
+				else
+					OutputInterface.MemoryAccessFlag <= MemoryAccessFlagAsync;
+				end if;
+				OutputInterface.MemoryAccessLoad <= MemoryAccessLoadAsync;
+				OutputInterface.MemoryAccessUnsigned <= MemoryAccessUnsignedAsync;
+				OutputInterface.MemoryAccessGranularity <= MemoryAccessGranularityAsync;
+
+				-- Writeback stage control signals
+				OutputInterface.WritebackReg <= WritebackRegAsync;
+				if Flush = '0' then
+					OutputInterface.WritebackEnable <= WritebackEnableAsync;
+				else
+					OutputInterface.WritebackEnable <= '0';
+				end if;
+
+			end if;
 			
 		end if;
 
 	end process PipelineRegisters;
 
-	assert WritebackRegAsync /= "00000" report "Attempted write to $0" severity WARNING;
+	--assert not (WritebackRegAsync /= "00000" and WritebackEnableAsync = '1') report "Attempted write to $0" severity WARNING;
 	
 end architecture RTL;

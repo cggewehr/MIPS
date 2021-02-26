@@ -11,7 +11,7 @@
 --------------------------------------------------------------------------------
 -- Revisions   : v0.01 - Gewehr: Initial implementation
 --------------------------------------------------------------------------------
--- TODO        : 
+-- TODO        : Implement and check for exceptions
 --------------------------------------------------------------------------------
 
 
@@ -33,6 +33,10 @@ entity FetchStage is
 
 		Clock: in std_logic;  -- From top level entity
 		Reset: in std_logic;  -- From top level entity
+
+		Stall: in std_logic;
+		Flush: in std_logic;
+		Except: out std_logic;
 
 		InputInterface: in FetchInput;  -- Defined in MIPS_PKG
 		OutputInterface: out FetchOutput  -- Defined in MIPS_PKG
@@ -63,10 +67,10 @@ begin
 
 		elsif rising_edge(Clock) then
 
-			PCMux: if InputInterface.BranchTakeFlag = '1' then
+			PCMux: if InputInterface.BranchTakeFlag = '1' and Stall = '0' then
 				ProgramCounter <= InputInterface.BranchAddress;
 
-			else
+			elsif Stall = '0' then
 				ProgramCounter <= IncrementedPCAsync;
 
 			end if;
@@ -81,13 +85,25 @@ begin
 
 		if Reset = '1' then
 
+			Except <= '0';
+
 			OutputInterface.Instruction <= (others => '0');
 			OutputInterface.IncrementedPC <= (others => '0');
 
 		elsif rising_edge(Clock) then
 			
-			OutputInterface.Instruction <= InputInterface.InstructionMemoryDataOut;
-			OutputInterface.IncrementedPC <= IncrementedPCAsync;
+			if Stall = '0' then
+
+				--if Flush = '1' then 
+				if Flush = '1' or InputInterface.BranchTakeFlag = '1' then 
+					OutputInterface.Instruction <= (others => '0');
+				else
+					OutputInterface.Instruction <= InputInterface.InstructionMemoryDataOut;
+				end if;
+				
+				OutputInterface.IncrementedPC <= IncrementedPCAsync;
+
+			end if;
 
 		end if;
 
